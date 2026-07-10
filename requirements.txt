@@ -1,0 +1,11 @@
+# Azure Functions runtime
+azure-functions==1.21.3
+
+# Azure Storage — blob download / upload / SAS
+azure-storage-blob==12.22.0
+
+# Azure Identity — Managed Identity + DefaultAzureCredential
+azure-identity==1.17.1
+
+# Azure Core (transitive, pinned for reproducibility)
+azure-core==1.30.2

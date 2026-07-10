@@ -1,0 +1,41 @@
+################################################################################
+# terraform.tfvars.example
+# ──────────────────────────────────────────────────────────────────────────────
+# Copy this file to terraform.tfvars and fill in the required values.
+#
+#   cp terraform.tfvars.example terraform.tfvars
+#
+# terraform.tfvars is gitignored by default — never commit it with real values.
+################################################################################
+
+# ── Required ───────────────────────────────────────────────────────────────────
+
+app_name            = "pptgen"          # 3–12 lowercase alphanumeric chars
+environment         = "prod"            # dev | staging | prod
+resource_group_name = "rg-pptgen"       # must already exist
+location            = "westeurope"
+
+# ── Optional overrides (defaults shown) ───────────────────────────────────────
+
+# python_version            = "3.11"
+# pre_warmed_instance_count = 1
+# max_elastic_worker_count  = 5
+
+# blob_input_container      = "input-json"
+# blob_template_container   = "templates"
+# blob_output_container     = "output-pptx"
+# blob_delete_retention_days = 7
+
+# template_blob_name        = "PowerpointTemplate_BoardMeetingGovernance.pptx"
+# sas_expiry_hours          = 24
+# max_bullets_per_slide     = 4
+# pptx_scripts_dir          = "/home/site/wwwroot/scripts"
+
+# log_retention_days        = 30
+
+# tags = {
+#   project     = "board-meeting-ppt-generator"
+#   managedBy   = "terraform"
+#   cost_center = "engineering"
+#   owner       = "tanish.goyal@accenture.com"
+# }

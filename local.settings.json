@@ -1,0 +1,17 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureFunctionsJobHost__extensionBundle__id": "Microsoft.Azure.Functions.ExtensionBundle",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "AZURE_STORAGE_CONNECTION_STRING": "<your-real-storage-connection-string>",
+
+    "BLOB_INPUT_CONTAINER": "input-json",
+    "BLOB_TEMPLATE_CONTAINER": "templates-ppt",
+    "BLOB_TEMPLATE_NAME": "PowerpointTemplate_BoardMeetingGovernance.pptx",
+    "BLOB_OUTPUT_CONTAINER": "output-pptx",
+    "SAS_EXPIRY_HOURS": "24",
+    "MAX_BULLETS_PER_SLIDE": "4",
+    "PPTX_SCRIPTS_DIR": "./scripts"
+  }
+}
