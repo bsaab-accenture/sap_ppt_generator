@@ -32,7 +32,7 @@ def main():
     with zipfile.ZipFile(pptx_file, 'r') as zip_ref:
         zip_ref.extractall(output_dir)
     
-    print(f"Unpacked {pptx_file} → {output_dir}")
+    print(f"Unpacked {pptx_file} -> {output_dir}")
 
 
 if __name__ == "__main__":

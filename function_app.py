@@ -108,6 +108,96 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 log.info("🚀 Function App initialized - Using %s", "LOCAL file storage" if os.getenv("USE_LOCAL_STORAGE", "").lower() == "true" else "AZURE blob storage")
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# HTTP trigger — synchronous JSON → PPTX
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route(route="generate_ppt", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+def generate_ppt_http(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    HTTP-triggered entry point.
+
+    POST /api/generate_ppt
+    Body : JSON payload (same schema as the blob trigger)
+    Returns: binary .pptx in response body, or JSON error on failure.
+
+    Designed for Power Automate HTTP connector:
+        Method  POST
+        Headers Content-Type: application/json
+                x-functions-key: <key>
+        Body    { "slides": [ ... ] }
+    """
+    start_ts = time.monotonic()
+
+    # ── 1. Parse request body ─────────────────────────────────────────────────
+    try:
+        content_json: dict = req.get_json()
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "ValidationError", "message": "Request body is not valid JSON."}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    log.info("[HTTP] generate_ppt called — %d top-level keys", len(content_json) if content_json else 0)
+
+    workdir: Path | None = None
+    try:
+        # ── 2. Download template ──────────────────────────────────────────────
+        template_container = _env("BLOB_TEMPLATE_CONTAINER", "templates-ppt")
+        template_blob_name = _env(
+            "BLOB_TEMPLATE_NAME",
+            "PowerpointTemplate_BoardMeetingGovernance.pptx",
+        )
+        template_bytes = blob_store.download_blob(template_container, template_blob_name)
+        log.info("[HTTP] Template loaded: %s/%s (%d bytes)", template_container, template_blob_name, len(template_bytes))
+
+        # ── 3. Generate PPTX ──────────────────────────────────────────────────
+        workdir = Path(tempfile.mkdtemp(prefix="pptx_http_"))
+        cfg = GeneratorConfig(
+            scripts_dir=Path(_env("PPTX_SCRIPTS_DIR", "/home/site/wwwroot/scripts")),
+            workdir=workdir,
+            max_bullets=_env_int("MAX_BULLETS_PER_SLIDE", 4),
+            geometry=TemplateGeometry(),
+            slot_map=TemplateSlotMap(),
+        )
+
+        pptx_bytes = generate_pptx(
+            template_bytes=template_bytes,
+            content_json=content_json,
+            cfg=cfg,
+        )
+        elapsed_s = round(time.monotonic() - start_ts, 2)
+        log.info("[HTTP] PPTX generated: %d bytes in %.2fs", len(pptx_bytes), elapsed_s)
+
+        return func.HttpResponse(
+            body=pptx_bytes,
+            status_code=200,
+            mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers={"Content-Disposition": 'attachment; filename="BoardMeeting_Generated.pptx"'},
+        )
+
+    except ValueError as exc:
+        log.warning("[HTTP] Validation error: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "ValidationError", "message": str(exc)}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    except Exception as exc:
+        log.exception("[HTTP] Unexpected error: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "InternalError", "message": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+    finally:
+        if workdir and workdir.exists():
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
 @app.blob_trigger(
     arg_name="input_blob",
     path="{BLOB_INPUT_CONTAINER}/{name}",          # resolved at runtime by the runtime
