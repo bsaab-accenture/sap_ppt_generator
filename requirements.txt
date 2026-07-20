@@ -9,3 +9,6 @@ azure-identity==1.17.1
 
 # Azure Core (transitive, pinned for reproducibility)
 azure-core==1.30.2
+
+# Word DOCX generation — agenda / preliminary minutes
+python-docx==1.1.2

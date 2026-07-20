@@ -1,0 +1,1 @@
+# docx_core package

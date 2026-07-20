@@ -71,6 +71,7 @@ else:
     log_storage = "AZURE blob storage"
 
 from ppt_core.generator import GeneratorConfig, TemplateGeometry, TemplateSlotMap, generate_pptx
+from docx_core.generator import DocxConfig, generate_docx
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Logging  — Azure Functions runtime surfaces these in Application Insights
@@ -335,6 +336,196 @@ def generate_board_meeting_ppt(input_blob: func.InputStream) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# HTTP trigger — synchronous JSON → DOCX (Agenda / Preliminary Minutes)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.route(route="generate_docx", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+def generate_docx_http(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    HTTP-triggered entry point for Word DOCX generation.
+
+    POST /api/generate_docx
+    Body : agendadocx_input.json payload  {"body": { ... }}
+    Returns: binary .docx in response body, or JSON error on failure.
+
+    Designed for Power Automate HTTP connector:
+        Method  POST
+        Headers Content-Type: application/json
+                x-functions-key: <key>
+        Body    { "body": { "Meeting_Title": "...", ... } }
+    """
+    start_ts = time.monotonic()
+
+    try:
+        content_json: dict = req.get_json()
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "ValidationError", "message": "Request body is not valid JSON."}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    log.info("[HTTP] generate_docx called — %d top-level keys", len(content_json) if content_json else 0)
+
+    try:
+        template_container = _env("BLOB_DOCX_TEMPLATE_CONTAINER", "templates-docx")
+        template_blob_name = _env(
+            "BLOB_DOCX_TEMPLATE_NAME",
+            "Preliminary_Minutes_BM20260219.docx",
+        )
+        template_bytes = blob_store.download_blob(template_container, template_blob_name)
+        log.info("[HTTP] DOCX template loaded: %s/%s (%d bytes)", template_container, template_blob_name, len(template_bytes))
+
+        docx_bytes = generate_docx(
+            template_bytes=template_bytes,
+            content_json=content_json,
+            cfg=DocxConfig(),
+        )
+        elapsed_s = round(time.monotonic() - start_ts, 2)
+        log.info("[HTTP] DOCX generated: %d bytes in %.2fs", len(docx_bytes), elapsed_s)
+
+        return func.HttpResponse(
+            body=docx_bytes,
+            status_code=200,
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={"Content-Disposition": 'attachment; filename="AgendaMinutes_Generated.docx"'},
+        )
+
+    except ValueError as exc:
+        log.warning("[HTTP] DOCX validation error: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "ValidationError", "message": str(exc)}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    except Exception as exc:
+        log.exception("[HTTP] DOCX unexpected error: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "InternalError", "message": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Blob trigger — async JSON → DOCX (Agenda / Preliminary Minutes)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@app.blob_trigger(
+    arg_name="input_blob",
+    path="{BLOB_DOCX_INPUT_CONTAINER}/{name}",
+    connection="AzureWebJobsStorage",
+)
+def generate_agenda_docx(input_blob: func.InputStream) -> None:
+    """
+    Blob-triggered function for DOCX generation.
+
+    Fires whenever a new blob lands in {BLOB_DOCX_INPUT_CONTAINER}.
+    Only processes blobs with a .json extension; silently skips all others.
+
+    Environment variables
+    ---------------------
+    BLOB_DOCX_INPUT_CONTAINER      Container for JSON inputs       [input-docx-json]
+    BLOB_DOCX_TEMPLATE_CONTAINER   Container for DOCX template     [templates-docx]
+    BLOB_DOCX_TEMPLATE_NAME        Template blob name              [Preliminary_Minutes_BM20260219.docx]
+    BLOB_DOCX_OUTPUT_CONTAINER     Container for generated DOCX    [output-docx]
+    """
+    blob_path: str = input_blob.name
+    blob_name: str = blob_path.split("/", 1)[-1]
+    stem: str = Path(blob_name).stem
+
+    log.info("▶  [DOCX] Triggered by blob: %s", blob_path)
+
+    if not blob_name.lower().endswith(".json"):
+        log.info("[DOCX] Skipping non-JSON blob: %s", blob_name)
+        return
+
+    start_ts = time.monotonic()
+
+    try:
+        # ── 1. Parse JSON ─────────────────────────────────────────────────────
+        raw_bytes = input_blob.read()
+        try:
+            content_json: dict = json.loads(raw_bytes.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            log.error("[DOCX] Failed to parse JSON '%s': %s", blob_name, exc)
+            _write_docx_error_sidecar(stem, str(exc))
+            return
+
+        log.info("[DOCX] Parsed JSON: %d top-level keys", len(content_json))
+
+        # ── 2. Download DOCX template ─────────────────────────────────────────
+        template_container = _env("BLOB_DOCX_TEMPLATE_CONTAINER", "templates-docx")
+        template_blob_name = _env(
+            "BLOB_DOCX_TEMPLATE_NAME",
+            "Preliminary_Minutes_BM20260219.docx",
+        )
+        template_bytes = blob_store.download_blob(template_container, template_blob_name)
+        log.info(
+            "[DOCX] Template downloaded: %s/%s (%d bytes)",
+            template_container, template_blob_name, len(template_bytes),
+        )
+
+        # ── 3. Generate DOCX ──────────────────────────────────────────────────
+        docx_bytes = generate_docx(
+            template_bytes=template_bytes,
+            content_json=content_json,
+            cfg=DocxConfig(),
+        )
+        log.info("[DOCX] Generated: %d bytes", len(docx_bytes))
+
+        # ── 4. Upload output DOCX ─────────────────────────────────────────────
+        output_container = _env("BLOB_DOCX_OUTPUT_CONTAINER", "output-docx")
+        output_blob_name = f"{stem}_generated.docx"
+
+        blob_store.upload_blob(
+            container=output_container,
+            blob_name=output_blob_name,
+            data=docx_bytes,
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+        # ── 5. Generate SAS URL ───────────────────────────────────────────────
+        sas_expiry_hours = _env_int("SAS_EXPIRY_HOURS", 24)
+        sas_url = blob_store.generate_sas_url(
+            container=output_container,
+            blob_name=output_blob_name,
+            expiry_hours=sas_expiry_hours,
+        )
+
+        # ── 6. Write metadata sidecar ─────────────────────────────────────────
+        elapsed_s = round(time.monotonic() - start_ts, 2)
+        topic_count = len(content_json.get("body", {}).get("Topics_Discussed", []))
+
+        metadata = {
+            "status": "success",
+            "source_blob": blob_path,
+            "output_blob": f"{output_container}/{output_blob_name}",
+            "sas_url": sas_url,
+            "sas_expiry_hours": sas_expiry_hours,
+            "input_topic_count": topic_count,
+            "generated_at": datetime.now(tz=timezone.utc).isoformat(),
+            "processing_seconds": elapsed_s,
+        }
+
+        _write_metadata_sidecar(output_container, stem, metadata)
+        log.info(
+            "✅  [DOCX] Done in %.2fs  →  %s/%s",
+            elapsed_s, output_container, output_blob_name,
+        )
+
+    except ValueError as exc:
+        log.error("[DOCX] Validation error for '%s': %s", blob_name, exc)
+        _write_docx_error_sidecar(stem, f"ValidationError: {exc}")
+
+    except Exception as exc:
+        log.exception("[DOCX] Unexpected error processing '%s': %s", blob_name, exc)
+        _write_docx_error_sidecar(stem, f"UnexpectedError: {exc}")
+        raise
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Sidecar helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -372,3 +563,23 @@ def _write_error_sidecar(stem: str, message: str) -> None:
         )
     except Exception as exc:
         log.warning("Failed to write error sidecar: %s", exc)
+
+
+def _write_docx_error_sidecar(stem: str, message: str) -> None:
+    """Write a DOCX error JSON sidecar to the DOCX output container."""
+    output_container = _env("BLOB_DOCX_OUTPUT_CONTAINER", "output-docx")
+    sidecar_name = f"{stem}_error.json"
+    payload = {
+        "status": "error",
+        "message": message,
+        "timestamp": datetime.now(tz=timezone.utc).isoformat(),
+    }
+    try:
+        blob_store.upload_blob(
+            container=output_container,
+            blob_name=sidecar_name,
+            data=json.dumps(payload, indent=2).encode("utf-8"),
+            content_type="application/json",
+        )
+    except Exception as exc:
+        log.warning("Failed to write DOCX error sidecar: %s", exc)

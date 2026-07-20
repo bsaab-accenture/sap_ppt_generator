@@ -12,6 +12,11 @@
     "BLOB_OUTPUT_CONTAINER": "output-pptx",
     "SAS_EXPIRY_HOURS": "24",
     "MAX_BULLETS_PER_SLIDE": "4",
-    "PPTX_SCRIPTS_DIR": "./scripts"
+    "PPTX_SCRIPTS_DIR": "./scripts",
+
+    "BLOB_DOCX_INPUT_CONTAINER": "input-docx-json",
+    "BLOB_DOCX_TEMPLATE_CONTAINER": "templates-docx",
+    "BLOB_DOCX_TEMPLATE_NAME": "Preliminary_Minutes_BM20260219.docx",
+    "BLOB_DOCX_OUTPUT_CONTAINER": "output-docx"
   }
 }
