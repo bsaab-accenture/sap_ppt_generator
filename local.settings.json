@@ -5,18 +5,12 @@
     "FUNCTIONS_WORKER_RUNTIME": "python",
     "AzureWebJobsStorage": "UseDevelopmentStorage=true",
     "AZURE_STORAGE_CONNECTION_STRING": "<your-real-storage-connection-string>",
-
-    "BLOB_INPUT_CONTAINER": "input-json",
-    "BLOB_TEMPLATE_CONTAINER": "templates-ppt",
-    "BLOB_TEMPLATE_NAME": "PowerpointTemplate_BoardMeetingGovernance.pptx",
-    "BLOB_OUTPUT_CONTAINER": "output-pptx",
-    "SAS_EXPIRY_HOURS": "24",
-    "MAX_BULLETS_PER_SLIDE": "4",
-    "PPTX_SCRIPTS_DIR": "./scripts",
+    "USE_LOCAL_STORAGE": "true",
 
     "BLOB_DOCX_INPUT_CONTAINER": "input-docx-json",
     "BLOB_DOCX_TEMPLATE_CONTAINER": "templates-docx",
     "BLOB_DOCX_TEMPLATE_NAME": "Preliminary_Minutes_BM20260219.docx",
-    "BLOB_DOCX_OUTPUT_CONTAINER": "output-docx"
+    "BLOB_DOCX_OUTPUT_CONTAINER": "output-docx",
+    "SAS_EXPIRY_HOURS": "24"
   }
 }
