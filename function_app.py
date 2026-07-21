@@ -1,7 +1,7 @@
 """
 function_app.py
 ───────────────
-Azure Functions v2 (decorator-based) entry point.
+Azure Functions v2 (decorator-based) entry point — Agenda PPT Generator.
 
 Trigger
 -------
@@ -14,39 +14,25 @@ What it does
 2.  Download the PPTX template from     {BLOB_TEMPLATE_CONTAINER}/{BLOB_TEMPLATE_NAME}.
 3.  Generate the populated PPTX in a    /tmp/<invocation-id>/ working directory.
 4.  Upload the output PPTX to           {BLOB_OUTPUT_CONTAINER}/<stem>_generated.pptx.
-5.  Write a JSON metadata sidecar to    {BLOB_OUTPUT_CONTAINER}/<stem>_metadata.json
-    containing the SAS URL, blob name, slide count, and processing duration.
+5.  Write a JSON metadata sidecar to    {BLOB_OUTPUT_CONTAINER}/<stem>_metadata.json.
 
 Environment variables
 ---------------------
-Required in production (set via Function App Configuration or Key Vault ref):
+Required in production:
 
-    STORAGE_ACCOUNT_NAME        Storage account name (used with Managed Identity)
-                                OR
+    STORAGE_ACCOUNT_NAME             Storage account name (Managed Identity)
+                                     OR
     AZURE_STORAGE_CONNECTION_STRING  Full connection string (local dev / CI)
 
-Optional (all have sensible defaults):
+Optional (sensible defaults shown):
 
-    BLOB_INPUT_CONTAINER        Container that receives JSON files      [input-json]
-    BLOB_TEMPLATE_CONTAINER     Container holding the PPTX template     [templates-ppt]
-    BLOB_TEMPLATE_NAME          Template blob name                      [PowerpointTemplate_BoardMeetingGovernance.pptx]
-    BLOB_OUTPUT_CONTAINER       Container for generated PPTX output     [output-pptx]
-    SAS_EXPIRY_HOURS            SAS URL validity window in hours        [24]
-    PPTX_SCRIPTS_DIR            Absolute path to pptx skill scripts     [/home/site/wwwroot/scripts]
-    MAX_BULLETS_PER_SLIDE       Max bullets before slide splits         [4]
-
-Local testing (func start)
---------------------------
-    cp local.settings.json.example local.settings.json
-    # fill in your storage details
-    func start
-
-To drop a test blob:
-    az storage blob upload \
-        --account-name <acct> \
-        --container-name input-json \
-        --name test_meeting.json \
-        --file Meeting_Minutes_Presentation_Inputs.json
+    BLOB_INPUT_CONTAINER        [input-json]
+    BLOB_TEMPLATE_CONTAINER     [templates-ppt]
+    BLOB_TEMPLATE_NAME          [AgendaTemplate.pptx]
+    BLOB_OUTPUT_CONTAINER       [output-agenda_ppt]
+    SAS_EXPIRY_HOURS            [24]
+    PPTX_SCRIPTS_DIR            [/home/site/wwwroot/scripts]
+    MAX_BULLETS_PER_SLIDE       [4]
 """
 
 from __future__ import annotations
@@ -65,17 +51,12 @@ import azure.functions as func
 # ── Conditional import: local filesystem or Azure Blob Storage ───────────────
 if os.getenv("USE_LOCAL_STORAGE", "false").lower() == "true":
     from ppt_core import blob_store_local as blob_store
-    log_storage = "LOCAL file storage"
 else:
     from ppt_core import blob_store
-    log_storage = "AZURE blob storage"
 
-from ppt_core.generator import GeneratorConfig, TemplateGeometry, TemplateSlotMap, generate_pptx
+from ppt_core.generator import GeneratorConfig, generate_pptx
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Logging  — Azure Functions runtime surfaces these in Application Insights
-# ─────────────────────────────────────────────────────────────────────────────
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  %(levelname)-8s  [%(name)s]  %(message)s",
@@ -83,10 +64,6 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Config helpers
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _env(key: str, default: str) -> str:
     return os.getenv(key, default)
@@ -101,39 +78,98 @@ def _env_int(key: str, default: int) -> int:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Function App
+app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
+log.info(
+    "Agenda PPT Function App initialized - Using %s",
+    "LOCAL" if os.getenv("USE_LOCAL_STORAGE", "").lower() == "true" else "AZURE",
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HTTP trigger
 # ─────────────────────────────────────────────────────────────────────────────
 
-app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
-log.info("🚀 Function App initialized - Using %s", "LOCAL file storage" if os.getenv("USE_LOCAL_STORAGE", "").lower() == "true" else "AZURE blob storage")
+@app.route(route="generate_agenda_ppt", methods=["POST"], auth_level=func.AuthLevel.FUNCTION)
+def generate_agenda_ppt_http(req: func.HttpRequest) -> func.HttpResponse:
+    """
+    POST /api/generate_agenda_ppt
+    Body : JSON payload (agenda schema)
+    Returns: binary .pptx, or JSON error on failure.
+    """
+    start_ts = time.monotonic()
 
+    try:
+        content_json: dict = req.get_json()
+    except ValueError:
+        return func.HttpResponse(
+            json.dumps({"error": "ValidationError", "message": "Request body is not valid JSON."}),
+            status_code=400,
+            mimetype="application/json",
+        )
+
+    log.info("[HTTP] generate_agenda_ppt called — %d top-level keys", len(content_json) if content_json else 0)
+
+    workdir: Path | None = None
+    try:
+        template_container = _env("BLOB_TEMPLATE_CONTAINER", "templates-ppt")
+        template_blob_name = _env("BLOB_TEMPLATE_NAME", "AgendaTemplate.pptx")
+        template_bytes = blob_store.download_blob(template_container, template_blob_name)
+        log.info("[HTTP] Template loaded: %s/%s (%d bytes)", template_container, template_blob_name, len(template_bytes))
+
+        workdir = Path(tempfile.mkdtemp(prefix="pptx_agenda_http_"))
+        cfg = GeneratorConfig(
+            scripts_dir=Path(_env("PPTX_SCRIPTS_DIR", "/home/site/wwwroot/scripts")),
+            workdir=workdir,
+            max_bullets=_env_int("MAX_BULLETS_PER_SLIDE", 4),
+        )
+
+        pptx_bytes = generate_pptx(template_bytes=template_bytes, content_json=content_json, cfg=cfg)
+        elapsed_s = round(time.monotonic() - start_ts, 2)
+        log.info("[HTTP] PPTX generated: %d bytes in %.2fs", len(pptx_bytes), elapsed_s)
+
+        return func.HttpResponse(
+            body=pptx_bytes,
+            status_code=200,
+            mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers={"Content-Disposition": 'attachment; filename="Agenda_Generated.pptx"'},
+        )
+
+    except ValueError as exc:
+        log.warning("[HTTP] Validation error: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "ValidationError", "message": str(exc)}),
+            status_code=400,
+            mimetype="application/json",
+        )
+    except Exception as exc:
+        log.exception("[HTTP] Unexpected error: %s", exc)
+        return func.HttpResponse(
+            json.dumps({"error": "InternalError", "message": str(exc)}),
+            status_code=500,
+            mimetype="application/json",
+        )
+    finally:
+        if workdir and workdir.exists():
+            shutil.rmtree(workdir, ignore_errors=True)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Blob trigger
+# ─────────────────────────────────────────────────────────────────────────────
 
 @app.blob_trigger(
     arg_name="input_blob",
-    path="{BLOB_INPUT_CONTAINER}/{name}",          # resolved at runtime by the runtime
+    path="{BLOB_INPUT_CONTAINER}/{name}",
     connection="AzureWebJobsStorage",
 )
-def generate_board_meeting_ppt(input_blob: func.InputStream) -> None:
-    """
-    Blob-triggered function.
+def generate_agenda_ppt(input_blob: func.InputStream) -> None:
+    """Fires when a JSON blob lands in the input container."""
+    blob_path: str = input_blob.name
+    blob_name: str = blob_path.split("/", 1)[-1]
+    stem: str = Path(blob_name).stem
 
-    Fires whenever a new blob lands in the input container.
-    Only processes blobs with a .json extension; silently skips all others.
+    log.info("Triggered by blob: %s", blob_path)
 
-    Parameters
-    ----------
-    input_blob : azure.functions.InputStream
-        The trigger blob stream.  Properties used:
-            .name   – full blob path (container/blob-name)
-            .read() – raw bytes
-    """
-    blob_path: str = input_blob.name          # e.g. "input-json/meeting_2026.json"
-    blob_name: str = blob_path.split("/", 1)[-1]   # e.g. "meeting_2026.json"
-    stem: str = Path(blob_name).stem               # e.g. "meeting_2026"
-
-    log.info("▶  Triggered by blob: %s", blob_path)
-
-    # ── Guard: only process .json blobs ───────────────────────────────────────
     if not blob_name.lower().endswith(".json"):
         log.info("Skipping non-JSON blob: %s", blob_name)
         return
@@ -142,7 +178,6 @@ def generate_board_meeting_ppt(input_blob: func.InputStream) -> None:
     workdir: Path | None = None
 
     try:
-        # ── 1. Read & parse JSON ──────────────────────────────────────────────
         raw_bytes = input_blob.read()
         try:
             content_json: dict = json.loads(raw_bytes.decode("utf-8"))
@@ -153,95 +188,53 @@ def generate_board_meeting_ppt(input_blob: func.InputStream) -> None:
 
         log.info("Parsed JSON: %d top-level keys", len(content_json))
 
-        # ── 2. Download template ──────────────────────────────────────────────
         template_container = _env("BLOB_TEMPLATE_CONTAINER", "templates-ppt")
-        template_blob_name = _env(
-            "BLOB_TEMPLATE_NAME",
-            "PowerpointTemplate_BoardMeetingGovernance.pptx",
-        )
+        template_blob_name = _env("BLOB_TEMPLATE_NAME", "AgendaTemplate.pptx")
         template_bytes = blob_store.download_blob(template_container, template_blob_name)
-        log.info(
-            "Template downloaded: %s/%s (%d bytes)",
-            template_container, template_blob_name, len(template_bytes),
-        )
+        log.info("Template downloaded: %s/%s (%d bytes)", template_container, template_blob_name, len(template_bytes))
 
-        # ── 3. Generate PPTX ──────────────────────────────────────────────────
-        workdir = Path(tempfile.mkdtemp(prefix="pptx_fn_"))
-
-        scripts_dir = Path(
-            _env("PPTX_SCRIPTS_DIR", "/home/site/wwwroot/scripts")
-        )
-
+        workdir = Path(tempfile.mkdtemp(prefix="pptx_agenda_fn_"))
         cfg = GeneratorConfig(
-            scripts_dir=scripts_dir,
+            scripts_dir=Path(_env("PPTX_SCRIPTS_DIR", "/home/site/wwwroot/scripts")),
             workdir=workdir,
             max_bullets=_env_int("MAX_BULLETS_PER_SLIDE", 4),
-            geometry=TemplateGeometry(),
-            slot_map=TemplateSlotMap(),
         )
 
-        pptx_bytes = generate_pptx(
-            template_bytes=template_bytes,
-            content_json=content_json,
-            cfg=cfg,
-        )
+        pptx_bytes = generate_pptx(template_bytes=template_bytes, content_json=content_json, cfg=cfg)
         log.info("PPTX generated: %d bytes", len(pptx_bytes))
 
-        # ── 4. Upload output PPTX ─────────────────────────────────────────────
-        output_container = _env("BLOB_OUTPUT_CONTAINER", "output-pptx")
-        output_blob_name = f"{stem}_generated.pptx"
+        output_container = _env("BLOB_OUTPUT_CONTAINER", "output-agenda_ppt")
+        output_blob_name = "Agenda_PPT.pptx"
+        blob_store.upload_blob(container=output_container, blob_name=output_blob_name, data=pptx_bytes)
 
-        blob_store.upload_blob(
-            container=output_container,
-            blob_name=output_blob_name,
-            data=pptx_bytes,
-        )
-
-        # ── 5. Generate SAS URL ───────────────────────────────────────────────
         sas_expiry_hours = _env_int("SAS_EXPIRY_HOURS", 24)
         sas_url = blob_store.generate_sas_url(
-            container=output_container,
-            blob_name=output_blob_name,
-            expiry_hours=sas_expiry_hours,
+            container=output_container, blob_name=output_blob_name, expiry_hours=sas_expiry_hours
         )
 
-        # ── 6. Write metadata sidecar ─────────────────────────────────────────
         elapsed_s = round(time.monotonic() - start_ts, 2)
-        slide_count = len(content_json.get("slides", []))
-
         metadata = {
             "status": "success",
             "source_blob": blob_path,
             "output_blob": f"{output_container}/{output_blob_name}",
             "sas_url": sas_url,
             "sas_expiry_hours": sas_expiry_hours,
-            "input_slide_count": slide_count,
             "generated_at": datetime.now(tz=timezone.utc).isoformat(),
             "processing_seconds": elapsed_s,
         }
-
         _write_metadata_sidecar(output_container, stem, metadata)
-        log.info(
-            "✅  Done in %.2fs  →  %s/%s",
-            elapsed_s, output_container, output_blob_name,
-        )
+        log.info("Done in %.2fs  ->  %s/%s", elapsed_s, output_container, output_blob_name)
 
     except ValueError as exc:
-        # Schema / validation errors — these are caller errors, not infra errors
         log.error("Validation error for '%s': %s", blob_name, exc)
         _write_error_sidecar(stem, f"ValidationError: {exc}")
-
     except Exception as exc:
-        # Unexpected errors — log full traceback for App Insights
         log.exception("Unexpected error processing '%s': %s", blob_name, exc)
         _write_error_sidecar(stem, f"UnexpectedError: {exc}")
-        raise   # re-raise so Azure retries (if retry policy is configured)
-
+        raise
     finally:
-        # Always clean up the temp workdir to avoid disk pressure on Premium plan
         if workdir and workdir.exists():
             shutil.rmtree(workdir, ignore_errors=True)
-            log.debug("Workdir cleaned: %s", workdir)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -249,7 +242,6 @@ def generate_board_meeting_ppt(input_blob: func.InputStream) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _write_metadata_sidecar(container: str, stem: str, metadata: dict) -> None:
-    """Upload a JSON metadata file alongside the generated PPTX."""
     sidecar_name = f"{stem}_metadata.json"
     try:
         blob_store.upload_blob(
@@ -260,13 +252,11 @@ def _write_metadata_sidecar(container: str, stem: str, metadata: dict) -> None:
         )
         log.info("Metadata sidecar written: %s/%s", container, sidecar_name)
     except Exception as exc:
-        # Non-fatal — don't let sidecar failure mask the main result
         log.warning("Failed to write metadata sidecar: %s", exc)
 
 
 def _write_error_sidecar(stem: str, message: str) -> None:
-    """Write an error JSON sidecar to the output container for observability."""
-    output_container = _env("BLOB_OUTPUT_CONTAINER", "output-pptx")
+    output_container = _env("BLOB_OUTPUT_CONTAINER", "output-agenda_ppt")
     sidecar_name = f"{stem}_error.json"
     payload = {
         "status": "error",

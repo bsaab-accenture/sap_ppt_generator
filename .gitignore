@@ -1,0 +1,24 @@
+# Local settings (may contain connection strings)
+local.settings.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+*.egg-info/
+.venv/
+venv/
+
+# Temp working dirs
+tmp/
+/tmp/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated outputs (local only)
+local_storage/output-agenda_ppt/*.pptx
+local_storage/output-pptx/*.pptx
+local_storage/output-docx/*.docx
