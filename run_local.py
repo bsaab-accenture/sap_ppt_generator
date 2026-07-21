@@ -13,7 +13,7 @@ def main():
     json_path = Path("./local_storage/input-json/Agenda_Presentation_Inputs.json")
     content_json = json.loads(json_path.read_text(encoding="utf-8"))
 
-    template_bytes = blob_store.download_blob("templates-ppt", "AgendaTemplate.pptx")
+    template_bytes = blob_store.download_blob("templates-ppt", "Agenda_BM20260116.pptx")
 
     cfg = GeneratorConfig(
         scripts_dir=Path("./scripts"),
