@@ -392,12 +392,17 @@ def _set_single_run_text_by_id(shape_map: dict, shape_id: int, text: str) -> Non
 
 
 def _append_run(para_elem, text: str, rpr=None) -> None:
-    """Append a new <a:r> with optional <a:rPr> to a paragraph element."""
-    r = etree.SubElement(para_elem, qn("a:r"))
+    """Insert a new <a:r> before <a:endParaRPr> (OOXML requires it to stay last)."""
+    r = etree.Element(qn("a:r"))
     if rpr is not None:
         r.append(deepcopy(rpr))
     t = etree.SubElement(r, qn("a:t"))
     t.text = text
+    end_rpr = para_elem.find(qn("a:endParaRPr"))
+    if end_rpr is not None:
+        para_elem.insert(list(para_elem).index(end_rpr), r)
+    else:
+        para_elem.append(r)
 
 
 def _append_paragraph(txBody_elem, text: str, rpr=None, template_para=None) -> None:
