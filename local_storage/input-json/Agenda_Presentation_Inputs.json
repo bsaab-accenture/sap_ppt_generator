@@ -1,0 +1,33 @@
+ 
+{
+  "documentType": "MeetingAgenda",
+  "meeting": {
+    "meetingId": "Meeting_30.07.2026_1",
+    "meetingTitle": "Board Meeting July",
+    "meetingDate": "2026-07-30",
+    "meetingTime": "13:00",
+    "durationMinutes": 180,
+    "attendees": "person1@company.com;person2@company.com",
+    "openingDurationMinutes": 10
+  },
+  "topics": [
+    {
+      "agendaId": "Meeting_30.07.2026_1_Topic_15-07-2026_Topic_Khushboo",
+      "topicId": "Topic_15-07-2026_Topic_Khushboo",
+      "topicTitle": "Topic Khushboo",
+      "sequence": 1,
+      "startTime": "01:10 PM",
+      "durationMinutes": 60,
+      "boardMember": "",
+      "xBoard": "",
+      "lead": "topic.lead@company.com",
+      "guest": "",
+      "status": "Draft",
+      "preReadFolderUrl": "https://..."
+    }
+  ],
+  "output": {
+    "format": "pptx",
+    "fileName": "Agenda_Board_Meeting_July_2026-07-30.pptx"
+  }
+}
