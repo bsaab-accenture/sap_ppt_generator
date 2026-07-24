@@ -136,16 +136,22 @@ def generate_sas_url(
     """
     Generate a read-only SAS URL for a blob.
 
-    The SAS token is signed with the storage account key retrieved via
-    the BlobServiceClient.  In Managed Identity mode the account key is
-    fetched from the service client properties; in connection-string mode
-    it is parsed from the connection string.
+    Two signing paths depending on available credentials:
+
+    1. Connection string present (AZURE_STORAGE_CONNECTION_STRING):
+       Signs with the account key parsed from the connection string.
+
+    2. Managed Identity (STORAGE_ACCOUNT_NAME, no connection string):
+       Signs with a user-delegation key obtained via get_user_delegation_key().
+       Requires the "Storage Blob Delegator" role on the Managed Identity.
+       Azure hard-limits user-delegation keys to 7 days; expiry_hours is
+       silently capped at 168.
 
     Parameters
     ----------
     container    : container name
     blob_name    : blob path/name
-    expiry_hours : token validity window (default 24 h)
+    expiry_hours : SAS validity window in hours (capped at 168 h on MI path)
 
     Returns
     -------
@@ -154,64 +160,50 @@ def generate_sas_url(
     service_client = _get_service_client()
     account_name: str = service_client.account_name  # type: ignore[assignment]
 
-    # Retrieve the account key (needed to sign the SAS token)
-    keys = service_client.get_account_information()
-    # get_user_delegation_key is the MI-compatible alternative but requires
-    # Storage Blob Delegator role; using account key is simpler for Premium plan.
-    account_key: Optional[str] = None
+    now = datetime.now(tz=timezone.utc)
+
     conn_str = os.getenv(_CONN_STR_ENV)
     if conn_str:
-        # Parse key from connection string  "AccountKey=...;..."
+        # ── Connection-string path: sign with account key ─────────────────────
+        account_key: Optional[str] = None
         for part in conn_str.split(";"):
             if part.startswith("AccountKey="):
                 account_key = part[len("AccountKey="):]
                 break
-
-    if account_key is None:
-        # Managed Identity path: retrieve key via management API
-        # Requires "Storage Account Key Operator Service Role" on the account.
-        # For production, prefer user-delegation SAS (see NOTE below).
-        raise NotImplementedError(
-            "SAS generation via account key requires AZURE_STORAGE_CONNECTION_STRING "
-            "or the Storage Account Key Operator role on the Managed Identity. "
-            "For MI-only environments, implement user-delegation SAS instead."
+        if account_key is None:
+            raise ValueError(
+                f"{_CONN_STR_ENV} is set but contains no AccountKey segment."
+            )
+        expiry = now + timedelta(hours=expiry_hours)
+        sas_token = generate_blob_sas(
+            account_name=account_name,
+            container_name=container,
+            blob_name=blob_name,
+            account_key=account_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=expiry,
         )
-
-    expiry = datetime.now(tz=timezone.utc) + timedelta(hours=expiry_hours)
-    sas_token = generate_blob_sas(
-        account_name=account_name,
-        container_name=container,
-        blob_name=blob_name,
-        account_key=account_key,
-        permission=BlobSasPermissions(read=True),
-        expiry=expiry,
-    )
+    else:
+        # ── Managed Identity path: user-delegation SAS ────────────────────────
+        # Azure caps user-delegation key validity at 7 days (168 h).
+        capped_hours = min(expiry_hours, 168)
+        expiry = now + timedelta(hours=capped_hours)
+        delegation_key = service_client.get_user_delegation_key(
+            key_start_time=now,
+            key_expiry_time=expiry,
+        )
+        sas_token = generate_blob_sas(
+            account_name=account_name,
+            container_name=container,
+            blob_name=blob_name,
+            user_delegation_key=delegation_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=expiry,
+        )
 
     url = (
         f"https://{account_name}.blob.core.windows.net"
         f"/{container}/{blob_name}?{sas_token}"
     )
-    log.info("SAS URL generated (expires %s UTC): %s…", expiry.isoformat(), url[:80])
+    log.info("SAS URL generated (expires %s UTC): %s...", expiry.isoformat(), url[:80])
     return url
-
-
-# NOTE ─ Production MI SAS alternative
-# ─────────────────────────────────────
-# If your Managed Identity has the "Storage Blob Delegator" role, replace
-# the account-key SAS above with a user-delegation SAS:
-#
-#   from azure.storage.blob import UserDelegationKey
-#   from azure.identity import ManagedIdentityCredential
-#
-#   delegation_key: UserDelegationKey = service_client.get_user_delegation_key(
-#       key_start_time=datetime.now(tz=timezone.utc),
-#       key_expiry_time=expiry,
-#   )
-#   sas_token = generate_blob_sas(
-#       account_name=account_name,
-#       container_name=container,
-#       blob_name=blob_name,
-#       user_delegation_key=delegation_key,
-#       permission=BlobSasPermissions(read=True),
-#       expiry=expiry,
-#   )

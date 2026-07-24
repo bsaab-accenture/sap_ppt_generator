@@ -1,8 +1,11 @@
 # Board Meeting PPT Generator — Azure Function
 
-Blob-triggered Azure Function (Python v2 model) that watches an Azure Storage
-container for dropped JSON files, generates a fully-populated PowerPoint deck
-from a template, and writes the result (plus a SAS URL) back to Storage.
+Azure Function (Python v2 model) with two triggers:
+
+| Trigger | Use case |
+|---|---|
+| **HTTP POST `/api/generate_ppt`** | Primary path for Power Automate — synchronous, returns binary PPTX in the response body |
+| **Blob trigger on `input-json/`** | Batch / async path — drop a JSON file into Storage and the PPTX is written to `output-pptx/` with a metadata sidecar |
 
 ---
 
@@ -29,6 +32,97 @@ meeting.json  ──►  [Blob Trigger]                      │
                                                                ...
                                                              }
 ```
+
+---
+
+## HTTP trigger — Power Automate integration
+
+### Endpoint
+
+```
+POST https://<function-app-name>.azurewebsites.net/api/generate_ppt
+```
+
+### Request
+
+```
+Content-Type: application/json
+x-functions-key: <function-api-key>
+```
+
+Body schema:
+
+```json
+{
+  "slides": [
+    {
+      "title": "string (required)",
+      "bullets": ["string", "..."],
+      "speaker_notes": "string (optional)"
+    }
+  ]
+}
+```
+
+Rules: `title` non-empty; `bullets` non-empty array; >4 bullets auto-split into "Title - Part 1", "Part 2", …
+
+### Responses
+
+| Status | Body | When |
+|---|---|---|
+| 200 | Binary `.pptx` (`Content-Type: application/vnd.openxmlformats-officedocument.presentationml.presentation`) | Success |
+| 400 | `{"error": "ValidationError", "message": "..."}` | Bad payload |
+| 500 | `{"error": "InternalError", "message": "..."}` | Unexpected failure |
+
+### curl test
+
+```bash
+curl -X POST https://<func>.azurewebsites.net/api/generate_ppt \
+  -H "Content-Type: application/json" \
+  -H "x-functions-key: <key>" \
+  -d @local_storage/input-json/Meeting_Minutes_Presentation_Inputs.json \
+  --output BoardMeeting_Generated.pptx \
+  -w "HTTP %{http_code} -- %{size_download} bytes\n"
+
+# Verify output is a valid PPTX
+python -c "
+import zipfile, re
+z = zipfile.ZipFile('BoardMeeting_Generated.pptx')
+prs = z.read('ppt/presentation.xml').decode()
+slides = re.findall(r'<p:sldId[^>]*r:id=\"(rId\d+)\"', prs)
+print(f'Valid PPTX -- {len(slides)} ordered slides')
+"
+```
+
+### Power Automate integration (3-step)
+
+**Step 1 — HTTP action** (calls the function):
+
+| Setting | Value |
+|---|---|
+| Method | `POST` |
+| URI | `https://<func>.azurewebsites.net/api/generate_ppt` |
+| Headers | `Content-Type: application/json`, `x-functions-key: <key>` |
+| Body | JSON payload built from Dataverse approved minutes data |
+
+**Step 2 — SharePoint: Create file** (saves the PPTX):
+
+| Setting | Value |
+|---|---|
+| Site Address | Your SharePoint site |
+| Folder Path | `/Board Meeting Minutes/@{formatDateTime(utcNow(), 'yyyy-MM-dd')}_@{triggerBody()?['MeetingName']}` |
+| File Name | `Meeting_Minutes_@{formatDateTime(utcNow(), 'yyyyMMdd_HHmmss')}.pptx` |
+| File Content | `@{body('HTTP')}` |
+
+**Step 3 — Error handler** (run after HTTP action on failure):
+
+```
+Configure run after: has failed / has timed out
+Action: Send email / Teams notification
+Body: "PPT generation failed: @{body('HTTP')['message']}"
+```
+
+Retrieve the function key: Azure Portal > Function App > Functions > `generate_ppt` > Function Keys.
 
 ---
 
@@ -162,7 +256,7 @@ az storage blob upload \
 | `STORAGE_ACCOUNT_NAME` | *(required)* | Storage account name (used with Managed Identity) |
 | `AZURE_STORAGE_CONNECTION_STRING` | *(optional)* | Overrides MI — use for local dev / CI |
 | `BLOB_INPUT_CONTAINER` | `input-json` | Container that triggers the function |
-| `BLOB_TEMPLATE_CONTAINER` | `templates` | Container holding the PPTX template |
+| `BLOB_TEMPLATE_CONTAINER` | `templates-ppt` | Container holding the PPTX template |
 | `BLOB_TEMPLATE_NAME` | `PowerpointTemplate_BoardMeetingGovernance.pptx` | Template blob name |
 | `BLOB_OUTPUT_CONTAINER` | `output-pptx` | Container for generated output |
 | `SAS_EXPIRY_HOURS` | `24` | SAS URL validity window |
@@ -243,5 +337,34 @@ malformed payload.
 - **SAS URLs** are read-only and expire after `SAS_EXPIRY_HOURS`.
 - **Public blob access** is disabled on the Storage Account.
 - TLS 1.2 minimum is enforced on both the Storage Account and Function App.
-- For MI-only SAS signing, grant the **Storage Blob Delegator** role and
-  switch to the user-delegation SAS code path (see `blob_store.py` NOTE).
+- For MI-only SAS signing, grant the **Storage Blob Delegator** role.
+  `blob_store.py` automatically uses user-delegation SAS when no connection
+  string is present (expiry capped at 168 h / 7 days per Azure limits).
+
+---
+
+## Open questions
+
+Before going to production, align on the following:
+
+1. **Dataverse schema** — what are the exact field names for approved meeting
+   title, date, attendee list, and per-topic bullet arrays in the Dataverse
+   entity that feeds the Power Automate flow?
+
+2. **Trigger flow** — which Power Automate flow calls the HTTP endpoint:
+   7.3 (topic-level approval), 7.4 (meeting-level approval), or both?
+
+3. **SharePoint destination** — confirm the exact folder path and file naming
+   convention for the generated PPTX (e.g.
+   `/Board Meeting Minutes/{YYYY-MM-DD}_{MeetingName}/Meeting_Minutes_{timestamp}.pptx`).
+
+4. **Auth key distribution** — how will the function API key be stored
+   securely in Power Automate? Recommend: Azure Key Vault reference surfaced
+   as a Power Automate environment variable.
+
+5. **Template ownership** — who is responsible for uploading a new PPTX
+   template to the `templates-ppt` blob container when the branding changes?
+   Is there a change-management process for this?
+
+6. **Error routing** — where should generation failures be surfaced?
+   Email alert to board-office? Power Apps error screen? Teams notification?

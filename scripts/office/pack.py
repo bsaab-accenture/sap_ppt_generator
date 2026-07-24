@@ -39,7 +39,7 @@ def main():
                 arcname = file_path.relative_to(unpacked_dir)
                 zipf.write(file_path, arcname)
     
-    print(f"PASS: Packed {unpacked_dir} → {output_pptx}")
+    print(f"PASS: Packed {unpacked_dir} -> {output_pptx}")
     print(f"      Size: {output_pptx.stat().st_size} bytes")
 
 
