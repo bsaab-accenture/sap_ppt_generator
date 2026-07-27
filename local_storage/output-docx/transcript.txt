@@ -1,34 +1,90 @@
-=== HEADER ===
-SAP Executive Board Meeting Feb 19, 2026             Preliminary Minutes
-=== END HEADER ===
+SAP Executive Board Meeting 
+Date: January 16, 2026Time: 14:30–15:30 CETFormat: Hybrid (Board Room + Teams dial-in)Transcript Type: Automatic, unedited, low confidence
 
-SAP Executive Board Meeting Feb 19, 2026
-Preliminary Minutes 
+14:30–14:35 — Opening (5 min)
+CEO Desk (Michael):Okay—uh—good afternoon everyone. It’s 2:30. We’ll go ahead and start. Recording is on. Some people are still joining.
+(multiple join sounds, brief echo)
+Chair (Christian):Yes, thank you. Let’s begin. We have a full agenda and I suggest we stay tight on timings.Before we start—can everyone hear me?
+CFO (Dominik):Yes—though there’s a bit of feedback.
+CEO Desk:One moment—muting the room mic… okay, should be better now.
+Chair:Good. Welcome everyone. Agenda was circulated in advance. Written updates are noted; we won’t cover those unless there are objections.
+(silence)
+Chair:Alright. Dominik, over to you for Government Affairs.
 
-| Participants |  |
-| Executive Board | Christian KleinGina Vargiu-BreuerDominik Asam Thomas Saueressig Muhammad Alam Sebastian Steinhaeuser |
-| Office of the CEO | O1O2 |
-| Topics | Lead, Guests | 1. TOPIC Aga, gb, gc, gd2. TOPIC Bgg, gh, gj, gk |
-| Minutes | O1 |
-| Distribution List | Executive Board Guests (extracts only) |
+14:35–15:00 — Government Affairs (25 min)
+GA Strategy Update / Sovereign Cloud & AI Support
+CFO (Dominik):Thanks. I’ll start with a brief update on Government Affairs. Overall engagement levels remain high, particularly in Europe and APJ.
+We’re seeing increased expectations around sovereign cloud—not just data residency, but operational control and AI model governance.
+(papers rustling, keyboard sounds)
+Board Assistant (Dominik):Dominik, sorry—just confirming, you’re referring to sovereign operations, not just infrastructure?
+CFO:Yes. Correct. Customers and regulators want endtoend assurance.
+CTO (Sebastian):That’s consistent with what engineering is hearing—especially regarding AI workloads.
+CFO:Exactly. And this ties to the second point: AI support strategy in regulated environments. Governments are no longer satisfied with generic AI claims; they want explicit guardrails, explainability, and auditability.
+XBoard Member (dialin, audio unclear):Sorry—can you repeat the part about auditability?
+CFO:Yes—specifically, the ability to demonstrate how AI decisions are made, logged, and reviewed.
+Chair:And are we confident our current offering meets this expectation?
+CTO:Technically—partially. Organizationally—it’s fragmented.
+CEO Desk:Just noting time—we have about ten minutes left on GA.
+CFO:Understood. Final point: we recommend deeper coordination between Government Affairs, cloud platform, and AI product leadership. Right now, customers see too many entry points.
+Chair:Thank you. Any urgent questions on GA?
+(two people start speaking at once, one stops)
+CPO (Gina):Just a comment—not a question—this has implications for enablement. Public-sector sales are asking for clarity.
+Chair:Noted. Let’s move on.
 
+15:00–16:00 — Business AI @ SAP (60 min total agenda item, but only 30 min in this meeting)
+(join sound)
+Guest Lead:Apologies—joined a bit late.
+CEO Desk:Welcome. We’re starting Business AI now.
+Overall Summary
+CPO (Gina):Thanks. I’ll co-lead this with Sebastian. I’ll start high-level.Business AI adoption is progressing, but not uniformly. We have strong momentum in pilots, slower conversion into scaled programs.
+Chair:What’s holding it back?
+CPO:Three things:
+unclear ownership
+uneven readiness across functions
+customer confusion about what’s “product” vs “platform”
+(brief silence)
+CTO:I’ll add—internally, engineering speed is fine. The bottleneck is alignment and governance, not capability.
+Deep Dives – Functional Workstreams
+CPO:Quickly by function:
+Sales: strong interest, low confidence
+Delivery: cautious, governance-heavy
+Customers: asking who is accountable if AI fails
+XBoard Member:That last one—“who is accountable”—is coming up repeatedly.
+CTO:Yes. That’s why we’re proposing a more explicit AI operating model.
+Chair:What does that mean in practice?
+CTO:Clear RACI: who owns model behavior, data quality, runtime monitoring.
+(audio crackle)
+CEO Desk:Sebastian, you cut out for five seconds there.
+CTO:Sorry—poor connection. Key point: without clear ownership, AI adoption stalls.
+Foundational Topics & Enablers
+CPO:Enablers are talent, tooling, and trust.We need more internal enablement, fewer “special cases,” and clearer guardrails.
+Chair:Is this a decision point today?
+CPO:Not yet. We’re asking alignment to prepare a concrete proposal.
+(someone sighs quietly, mic still on)
+Chair:Understood.
 
+16:00–16:30 — Boardonly Session (30 min)
+CEO Desk:Guests are asked to drop now. Board-only session begins.
+(multiple leave sounds)
+Open Discussion / Any Additional Topics
+Chair:Alright. Board only. Let’s be candid.My concern is we talk a lot about AI ambition but still operate like it’s optional.
+CFO:I agree. It’s also becoming a financial risk if we don’t standardize.
+CTO:From my side, the tech debt risk is growing—including governance debt.
+CPO:And people are overwhelmed. Transformation fatigue is real.
+Chair:So what do we do before the next meeting?
+(pause)
+CEO:I suggest three concrete next steps:
+a onepage AI operating model proposal
+a clear statement on sovereign AI positioning
+a pilottoscale decision framework
+CFO:With cost transparency attached.
+Chair:Yes. CEO Desk—capture that.
+CEO Desk:Captured as proposed actions, pending confirmation.
+Chair:Good. Anything else urgent?
+(silence)
+Chair:Alright. We’ll close here.
 
-| Topic, context, feedback, decisions, and action items | Lead | Due |
-| Opening | C. Klein |  |
-| 1. TOPIC A….Context, Board feedback, decisions & resulting action items: | M. Alam, |  |
-|  |  |  |
-|  |  |  |
-|  |  |  |
-| 2. TOPIC B….Context, Board feedback, decisions & resulting action items: | S. Steinhaeuser, |  |
-|  |  |  |
-|  |  |  |
-|  |  |  |
-| Board only |  |  |
-|  |  |  |
-
-
-
-=== FOOTER ===
-Confidential - Subject to SAP Executive Board onlyPage 1 of 4
-=== END FOOTER ===
+16:30 — Close
+CEO Desk:Meeting adjourned at 4:30 CET. Draft minutes and actions will be circulated.
+Chair:Thank you, everyone.
+(recording stops)

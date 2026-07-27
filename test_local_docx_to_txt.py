@@ -29,10 +29,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent
 
-# Prefer SAP transcript if it exists, fall back to the template docx
+# Priority: SAP transcript → convertor template → meeting minutes template
 _SAP = ROOT / "local_storage" / "SAP_Executive_Board_Meeting_Dummy_Transcript.docx"
+_CONVERTOR = ROOT / "local_storage" / "templates-convertor" / "Transcript.docx.docx"
 _TEMPLATE = ROOT / "local_storage" / "templates-docx" / "Preliminary_Minutes_BM20260219.docx"
-DOCX_PATH = _SAP if _SAP.exists() else _TEMPLATE
+DOCX_PATH = _SAP if _SAP.exists() else (_CONVERTOR if _CONVERTOR.exists() else _TEMPLATE)
 
 OUTPUT_DIR = ROOT / "local_storage" / "output-docx"
 OUTPUT_PATH = OUTPUT_DIR / "transcript.txt"
