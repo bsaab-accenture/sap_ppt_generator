@@ -79,6 +79,10 @@ def _env_int(key: str, default: int) -> int:
 
 # ─────────────────────────────────────────────────────────────────────────────
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
+
+from docx_core.triggers import bp as docx_bp
+app.register_blueprint(docx_bp)
+
 log.info(
     "Agenda PPT Function App initialized - Using %s",
     "LOCAL" if os.getenv("USE_LOCAL_STORAGE", "").lower() == "true" else "AZURE",
