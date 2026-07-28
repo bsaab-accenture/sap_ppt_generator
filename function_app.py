@@ -163,7 +163,7 @@ def generate_agenda_ppt_http(req: func.HttpRequest) -> func.HttpResponse:
 
 @app.blob_trigger(
     arg_name="input_blob",
-    path="{BLOB_INPUT_CONTAINER}/{name}",
+    path="%BLOB_INPUT_CONTAINER%/{name}",
     connection="AzureWebJobsStorage",
 )
 def generate_agenda_ppt(input_blob: func.InputStream) -> None:
